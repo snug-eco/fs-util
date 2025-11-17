@@ -4,6 +4,8 @@ import argparse
 import struct
 import os
 
+FLAG_ACTIVE = 0xB0
+FLAG_DELETE = 0xA0
 
 parser = argparse.ArgumentParser(
     prog='fs-util',
@@ -39,7 +41,6 @@ class SdFile:
     @classmethod
     def parse(cls):
         self = cls()
-        self.addr = sd.tell()
         (
             self.flags, 
             name, 
@@ -55,10 +56,9 @@ class SdFile:
         return self
 
     def valid(self):
-        return self.flags in (0xB0, 0xA0)
+        return self.flags in (FLAG_ACTIVE, FLAG_DELETE)
 
     def emit(self):
-        sd.seek(self.addr)
         header = struct.pack(
             self.header_format,
             self.flags, 
@@ -76,17 +76,16 @@ class SdFile:
 
 def parse_sd_card():
     files = []
+    sd.seek(0)
     while True:
         file = SdFile.parse()
         if not file.valid(): break
         files.append(file)
-    
-    #rewind to match before invalid
-    sd.seek(file.addr)
 
     return files
 
 def emit_sd_card(files):
+    sd.seek(0)
     for file in files:
         file.emit()
 
@@ -101,7 +100,7 @@ def dj2(name):
 def find(files, name):
     targets = [] 
     for file in files:
-        if file.name == name:
+        if file.name == name and file.flags == FLAG_ACTIVE:
             targets.append(file)
 
     return targets
@@ -149,7 +148,7 @@ def main():
 
         case 'stat':
             no_files = len(files)
-            no_del   = sum(1 for file in files if file.flags == 0xA0)
+            no_del   = sum(1 for file in files if file.flags == FLAG_DELETE)
             img_size = sd.tell()
 
             print("--- Stats ---")
@@ -167,18 +166,18 @@ def main():
                 if not args.force: return
 
                 print("Overwritting.")
-                find(files, args.file)[0].content = content
+                file = find(files, args.file)[0]
 
             else:
                 file = SdFile()
-                file.name = args.file
-                file.size = os.path.getsize(file.name)
-                file.hash = dj2(file.name)
-                file.addr = sd.tell()
-                file.flags = 0xB0
-                file.content = content
-
                 files.append(file)
+
+            file.name = args.file
+            file.size = os.path.getsize(file.name)
+            file.hash = dj2(file.name)
+            file.flags = FLAG_ACTIVE
+            file.content = content
+
 
         case 'download':
             fs = find(files, args.file)
@@ -188,9 +187,6 @@ def main():
                 src = fs[0]
                 with open(args.file, 'wb') as dst:
                     dst.write(src.content)
-
-
-
 
             #no need for write-back
             return
