@@ -14,17 +14,19 @@ parser = argparse.ArgumentParser(
 parser.add_argument('--dev', '-d',  required=True, help='sd card device name.')
 subparsers = parser.add_subparsers(help='operation to perform.', dest='command')
 
-subparsers.add_parser("list",    help='list file')
-subparsers.add_parser("compact", help='run garbage collection')
+parser_verify = subparsers.add_parser("verify", help='verify image and hashes.')
+parser_verify.add_argument('-f', '--fix', action='store_true', help='fix problems if possible.')
 
+subparsers.add_parser("stat", help='statistics.')
 
 parser_upload = subparsers.add_parser("upload", help='upload file')
 parser_upload.add_argument('file', help='path to file to upload.')
+parser_upload.add_argument('-f', '--force', action='store_true', help='overwrite existing file.')
 
 parser_download = subparsers.add_parser("download", help='download file')
 parser_download.add_argument('file', help='path to file to download.')
 
-parser_image = subparsers.add_parser("image", help='image from directory')
+parser_image = subparsers.add_parser("format", help='format from directory')
 parser_image.add_argument('dir', help='directory')
 
 args = parser.parse_args()
@@ -111,18 +113,61 @@ def main():
     files = parse_sd_card()
 
     match args.command:
-        case 'list':
+        case 'verify':
+            problems = 0
+            print("--- Checking Hashes ---")
             for file in files:
-                print(file)
+                should = dj2(file.name)
+                good = file.hash == should
+                print(f"{file}: {'good' if good else 'bad'}")
 
-                if file.hash != dj2(file.name):
-                    print("Warning! File name hash mismatch.")
-                    print(f"should: {dj2(file.name)} is: {file.hash}")
+                if not good:
+                    print(f"\tPresent  Hash: {file.hash}")
+                    print(f"\tComputed Hash: {should}")
+                    
+                    if args.fix:
+                        file.hash = should
+                        print("Fixed hash.")
+                    else:
+                        problems += 1
+
+            print("--- Checking duplicates ---")
+            found = set()
+            for file in files:
+                good = file not in found
+                print(f"{file}: {'good' if good else 'duplicate'}")
+
+                if not good: problems += 1
+
+                found.add(file)
+
+            print()
+            print(f"{problems} Problems.")
+            if problems == 0: print("Ur gud :3")
+            if problems != 0: print("Ur in twubble >:3")
+
+
+        case 'stat':
+            no_files = len(files)
+            no_del   = sum(1 for file in files if file.flags == 0xA0)
+            img_size = sd.tell()
+
+            print("--- Stats ---")
+            print(f"Image Size             : {img_size} bytes")
+            print(f"Number of         files: {no_files}")
+            print(f"Number of deleted files: {no_del}")
+
 
         case 'upload':
+            with open(args.file, 'rb') as f:
+                content = f.read()
+                
             if len(find(files, args.file)) > 0:
                 print("File already exists.")
-                return
+                if not args.force: return
+
+                print("Overwritting.")
+                find(files, args.file)[0].content = content
 
             else:
                 file = SdFile()
@@ -131,11 +176,25 @@ def main():
                 file.hash = dj2(file.name)
                 file.addr = sd.tell()
                 file.flags = 0xB0
-
-                with open(file.name, 'rb') as f:
-                    file.content = f.read()
+                file.content = content
 
                 files.append(file)
+
+        case 'download':
+            fs = find(files, args.file)
+            if   len(fs) == 0: print("File {args.file} not found.")
+            elif len(fs) >  1: print("Duplicate {args.file}'s found.")
+            else:
+                src = fs[0]
+                with open(args.file, 'wb') as dst:
+                    dst.write(src.content)
+
+
+
+
+            #no need for write-back
+            return
+
 
     emit_sd_card(files)
 
