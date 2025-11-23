@@ -37,6 +37,7 @@ sd = open(args.dev, "rb+")
 class SdFile:
     header_format = '<B255sLL'
     header_size = struct.calcsize(header_format)
+    failed = False
     
     @classmethod
     def parse(cls):
@@ -50,13 +51,16 @@ class SdFile:
             self.header_format, 
             sd.read(self.header_size)
         )
-        self.name = name.decode('ascii').strip('\0')
-        self.content = sd.read(self.size)
+        try:
+            self.name = name.decode('ascii').strip('\0')
+            self.content = sd.read(self.size)
+        except:
+            self.failed = True
 
         return self
 
     def valid(self):
-        return self.flags in (FLAG_ACTIVE, FLAG_DELETE)
+        return (not self.failed) and self.flags in (FLAG_ACTIVE, FLAG_DELETE)
 
     def emit(self):
         header = struct.pack(
