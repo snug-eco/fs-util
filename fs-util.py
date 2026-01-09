@@ -28,8 +28,10 @@ parser_upload.add_argument('-f', '--force', action='store_true', help='overwrite
 parser_download = subparsers.add_parser("download", help='download file')
 parser_download.add_argument('file', help='path to file to download.')
 
-parser_image = subparsers.add_parser("format", help='format from directory')
-parser_image.add_argument('dir', help='directory')
+parser_image = subparsers.add_parser("image", help='image from directory')
+parser_image.add_argument('dir', help='directory.')
+parser_image.add_argument('-y', '--yes', action='store_true', help='confirm.')
+
 
 args = parser.parse_args()
 sd = open(args.dev, "rb+")
@@ -73,6 +75,17 @@ class SdFile:
 
         sd.write(header)
         sd.write(self.content)
+
+    def from_host(self, path):
+        name = os.path.basename(path)
+        with open(path, 'rb') as f:
+            content = f.read()
+
+        self.name = name
+        self.size = os.path.getsize(path)
+        self.hash = dj2(name)
+        self.flags = FLAG_ACTIVE
+        self.content = content
 
     def __str__(self):
         return f"<file flags={hex(self.flags)} name='{self.name}' size={self.size}>"
@@ -162,25 +175,35 @@ def main():
 
 
         case 'upload':
-            with open(args.file, 'rb') as f:
-                content = f.read()
                 
-            if len(find(files, args.file)) > 0:
+            name = os.path.basename(args.file)
+            if len(find(files, name)) > 0:
                 print("File already exists.")
                 if not args.force: return
 
                 print("Overwritting.")
-                file = find(files, args.file)[0]
+                file = find(files, name)[0]
 
             else:
                 file = SdFile()
                 files.append(file)
 
-            file.name = args.file
-            file.size = os.path.getsize(file.name)
-            file.hash = dj2(file.name)
-            file.flags = FLAG_ACTIVE
-            file.content = content
+            file.from_host(args.file)
+
+        case 'image':
+            files = []
+
+            for host_file in os.listdir(args.dir):
+                sd_file = SdFile()
+                files.append(sd_file)
+                sd_file.from_host(os.path.join(args.dir, host_file))
+
+            if not args.yes:
+                if input("!!you are about to reformat the entire file system!! continue? [y, N] ") != "y":
+                    print("aborted.")
+                    return
+
+            print("flashing! (byebye data TwT)")
 
 
         case 'download':
