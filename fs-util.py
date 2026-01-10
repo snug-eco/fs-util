@@ -106,6 +106,10 @@ def emit_sd_card(files):
     for file in files:
         file.emit()
 
+    #terminating header
+    for _ in range(1000):
+        sd.write(0) #
+
 def dj2(name):
     hash = 5381
 
