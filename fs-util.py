@@ -65,16 +65,22 @@ class SdFile:
         return (not self.failed) and self.flags in (FLAG_ACTIVE, FLAG_DELETE)
 
     def emit(self):
+        need_terminate = self.content[-1] != b'\0'
+
         header = struct.pack(
             self.header_format,
             self.flags, 
             self.name.encode('ascii'), 
             self.hash, 
-            self.size
+            self.size + (1 if need_terminate else 0)
         )
 
         sd.write(header)
         sd.write(self.content)
+
+        #ensure termination
+        if need_terminate:
+            sd.write(b'\0')
 
     def from_host(self, path):
         name = os.path.basename(path)
@@ -212,8 +218,8 @@ def main():
 
         case 'download':
             fs = find(files, args.file)
-            if   len(fs) == 0: print("File {args.file} not found.")
-            elif len(fs) >  1: print("Duplicate {args.file}'s found.")
+            if   len(fs) == 0: print(f"File {args.file} not found.")
+            elif len(fs) >  1: print(f"Duplicate {args.file}'s found.")
             else:
                 src = fs[0]
                 with open(args.file, 'wb') as dst:
